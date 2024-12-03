@@ -15,7 +15,7 @@ uint8_t SD_SendACMD41();
 uint8_t SD_Card_Init();
 uint8_t SD_Init();
 
-
+// Need to order new SD card modules, think I shorted them both :)
 int main() {
 	SPI_Init();
 	USART_Init();
@@ -200,7 +200,7 @@ uint8_t SD_SendACMD41() {
 	SD_Select();
 
 	SPI_Transfer(0x69);																	// ACMD41
-	SPI_Transfer(0x00);																	// HCS bit
+	SPI_Transfer(0x40);																	// HCS bit
 	SPI_Transfer(0x00);																	// Reserved
 	SPI_Transfer(0x00);																	// Reserved
 	SPI_Transfer(0x00);																	// Reserved
