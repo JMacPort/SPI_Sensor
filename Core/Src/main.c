@@ -23,24 +23,10 @@ int main() {
 
 	uint8_t response;
 
-	// Test power up sequence
-	SD_PowerUp();
-	printf("Power up sequence complete\r\n");
+	// Should return 0 if sequence powers up correctly
+	response = SD_Init();
 
-    // Test CMD0
-	response = SD_SendCMD0();
-	printf("CMD0 Response: 0x%02X\r\n", response);  // Should be 0x01
-
-	// Test CMD8
-	response = SD_SendCMD8();
-	printf("CMD8 Response: 0x%02X\r\n", response);  // Should be 0x01
-
-	response = SD_SendCMD58();
-	printf("CMD58 Response: 0x%02X\r\n", response);
-
-	// Test CMD55 (by itself first)
-	response = SD_Card_Init();
-	printf("CMD55/ACMD41 Response: 0x%02X\r\n", response);  // Should be 0x00
+	printf("Response: %d\r\n", response);
 
 	while (1) {
 
@@ -118,6 +104,7 @@ uint8_t SD_SendCMD0() {
 	SD_Deselect();																		// Deselects SD card and runs a cycle
 	SPI_Transfer(0xFF);
 
+	printf("CMD0: %d\r\n",response);
 	return response;																	// Should be 0x01 if successful
 }
 
@@ -145,6 +132,7 @@ uint8_t SD_SendCMD8() {
 	SD_Deselect();																		// Deselects SD card and runs a cycle
 	SPI_Transfer(0xFF);
 
+	printf("CMD8: %d\r\n",response[1]);
 	return response[1];																	// Should be 0x01 if successful
 }
 
@@ -194,11 +182,13 @@ uint8_t SD_SendCMD55() {
 	for (int i = 0; i < 10; i++) {
 		response = SPI_Transfer(0xFF);
 		if (response != 0xFF) break;
+		for (volatile int j = 0; j < 10000; j++);
 	}
 
 	SD_Deselect();
 	SPI_Transfer(0xFF);
 
+	printf("CMD55: %d\r\n",response);
 	return response;																	// Should be 0x01
 }
 
@@ -210,7 +200,7 @@ uint8_t SD_SendACMD41() {
 	SD_Select();
 
 	SPI_Transfer(0x69);																	// ACMD41
-	SPI_Transfer(0x40);																	// HCS bit
+	SPI_Transfer(0x00);																	// HCS bit
 	SPI_Transfer(0x00);																	// Reserved
 	SPI_Transfer(0x00);																	// Reserved
 	SPI_Transfer(0x00);																	// Reserved
@@ -218,14 +208,16 @@ uint8_t SD_SendACMD41() {
 
 	uint8_t response;
 
-	for (int i = 0; i < 20; i++) {
+	for (int i = 0; i < 50; i++) {
 		response = SPI_Transfer(0xFF);
 		if (response != 0xFF) break;
+		for (volatile int j = 0; j < 100000; j++);
 	}
 
 	SD_Deselect();
 	SPI_Transfer(0xFF);
 
+	printf("ACMD41: %d\r\n",response);
 	return response;
 }
 
