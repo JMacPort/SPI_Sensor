@@ -30,7 +30,6 @@ Developed an embedded system to interface with a MicroSD card via the SPI protoc
 - **Power**: 3.3V (for STM32 and SD card)
 - **Debug**: UART TX/RX via PA2/PA3 for USART2
 
-
 ## Functionality Overview
 
 ### SPI Initialization
@@ -67,4 +66,8 @@ uint8_t SPI_Transfer(uint8_t data) {
 - Add support for higher-speed SD card operations.
 - Implement a file system interface (e.g., FAT16/32) for easy file management on the SD card.
 
+
+## Update: Receiving an external power module as the on board power supply may not have been stable enough for the current use case. Should arrive on 12/17 and allow me to get a better test going.
+The module would get a lot warmer than you would expect during when plugging the module in so I believe it is the same issue as the ESP-01 was having. If it doesn't work now, I would assume it is
+faulty as well. 
 

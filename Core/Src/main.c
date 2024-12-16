@@ -5,6 +5,7 @@
 
 void SPI_Init();
 void USART_Init();
+uint8_t SPI_Transfer(uint8_t);
 uint8_t SD_Init();
 void SD_PowerUp();
 uint8_t SD_SendCMD0();
@@ -21,12 +22,9 @@ int main() {
 	USART_Init();
 	printf("READY\r\n");
 
-	uint8_t response;
-
 	// Should return 0 if sequence powers up correctly
-	response = SD_Init();
-
-	printf("Response: %d\r\n", response);
+	uint8_t miso_state = SPI_Transfer(0xFF);
+	printf("Initial MISO: 0x%02X\n", miso_state);
 
 	while (1) {
 
@@ -36,14 +34,18 @@ int main() {
 
 void SPI_Init() {
 	RCC -> AHB1ENR |= (1 << 0);															// GPOPA Clock
+	RCC -> AHB1ENR |= (1 << 1);															// GPOPB Clock
 	RCC -> APB2ENR |= (1 << 12);														// SPI1 Clock
 
-	GPIOA -> MODER &= ~(3 << (2 * 4));													// PA4 for output/SD card and generates a high signal; bit amount * pin number
-	GPIOA -> MODER |= (1 << (2 * 4));
-	GPIOA -> ODR |= (1 << 4);
+	GPIOB -> MODER &= ~(3 << (2 * 6));													// PB6 for output/SD card and generates a high signal; bit amount * pin number
+	GPIOB -> MODER |= (1 << (2 * 6));
+	GPIOB -> ODR |= (1 << 6);
 
 	GPIOA -> MODER &= ~((3 << (2 * 5)) | (3 << (2 * 6)) | (3 << (2 * 7))); 				// PA5, PA6 & PA7 set for Alternate Function
 	GPIOA -> MODER |= ((2 << (2 * 5)) | (2 << (2 * 6)) | (2 << (2 * 7)));
+
+	GPIOA->PUPDR &= ~(3 << (2 * 6));  													// Set pull-up
+	GPIOA->PUPDR |= (1 << (2 * 6));
 
 	GPIOA -> AFR[0] &= ~((15 << (4 * 5)) | (15 << (4 * 6)) | (15 << (4 * 7)));			// PA5, PA6 & PA7 set for AFR5; SPI1
 	GPIOA -> AFR[0] |= (5 << (4 * 5)) | (5 << (4 * 6)) | (5 << (4 * 7));
@@ -65,11 +67,11 @@ uint8_t SPI_Transfer(uint8_t data) {
 }
 
 void SD_Select() {
-	GPIOA -> ODR &= ~(1 << 4);															// Generates a low output
+	GPIOB -> ODR &= ~(1 << 6);															// Generates a low output
 }
 
 void SD_Deselect() {
-	GPIOA -> ODR |= (1 << 4);															// Generates a high output
+	GPIOB -> ODR |= (1 << 6);															// Generates a high output
 }
 
 // Allows the SD card to be put into SPI mode
@@ -81,31 +83,29 @@ void SD_PowerUp() {
 
 // Puts SD card into SPI mode, brings it to an idle state and returns response code
 uint8_t SD_SendCMD0() {
+    printf("Starting CMD0\r\n");
+    SPI_Transfer(0xFF);
 
-	SPI_Transfer(0xFF);																	// Extra clock cycle
+    SD_Select();
+    printf("CS Low\r\n");
 
-	SD_Select();																		// Selects SD card
+    SPI_Transfer(0x40);
+    SPI_Transfer(0x00);
+    SPI_Transfer(0x00);
+    SPI_Transfer(0x00);
+    SPI_Transfer(0x00);
+    SPI_Transfer(0x95);
+    printf("CMD0 sent\r\n");
 
-	SPI_Transfer(0x40);																	// CMD0 begin
-	SPI_Transfer(0x00);																	// Reserved
-	SPI_Transfer(0x00);																	// Reserved
-	SPI_Transfer(0x00);																	// Reserved
-	SPI_Transfer(0x00);																	// Reserved
-	SPI_Transfer(0x95);																	// CRC
+    uint8_t response;
+    for (int i = 0; i < 10; i++) {
+        response = SPI_Transfer(0xFF);
+        printf("Try %d: 0x%02X\r\n", i, response);
+        if (response != 0xFF) break;
+    }
 
-	uint8_t response;
-
-
-	for (int i = 0; i < 10; i++) {														// Gives the SD card 80 cycles to respond
-		response = SPI_Transfer(0xFF);
-		if (response != 0xFF) break;
-	}
-
-	SD_Deselect();																		// Deselects SD card and runs a cycle
-	SPI_Transfer(0xFF);
-
-	printf("CMD0: %d\r\n",response);
-	return response;																	// Should be 0x01 if successful
+    SD_Deselect();
+    return response;
 }
 
 // Checks if SD card can operate at current device voltage; required for v2+
