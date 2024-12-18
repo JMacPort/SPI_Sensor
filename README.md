@@ -67,7 +67,11 @@ uint8_t SPI_Transfer(uint8_t data) {
 - Implement a file system interface (e.g., FAT16/32) for easy file management on the SD card.
 
 
+## 12/17: MISO Line is still driven low as soon as the module is plugged in. This leads me to believe that the modules were soldered incorrectly at the factory so they would have to be fixed. Regardless
+the external power module did not fix anything in either project so I am left wondering where my issues stem from. 
+
 ## Update: Receiving an external power module as the on board power supply may not have been stable enough for the current use case. Should arrive on 12/17 and allow me to get a better test going.
 The module would get a lot warmer than you would expect during when plugging the module in so I believe it is the same issue as the ESP-01 was having. If it doesn't work now, I would assume it is
 faulty as well. 
+
 
