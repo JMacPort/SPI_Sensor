@@ -75,3 +75,7 @@ The module would get a lot warmer than you would expect during when plugging the
 faulty as well. 
 
 
+## 12/19: Module works, supply 5v satisfied the module. It has an onboard regulator to convert the 5v into 3.3v and supplies enough current. Module starts up and initializes perfectly now and gives
+the correct command returns. I will be able to (re)begin implementing the reading and writing function, and then using the module to store sensor data and more. Now I can also possibly implement	
+some machine learning methods for SD data but that wont be for a long time.
+

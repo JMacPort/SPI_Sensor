@@ -16,20 +16,18 @@ uint8_t SD_SendACMD41();
 uint8_t SD_Card_Init();
 uint8_t SD_Init();
 
-// Need to order new SD card modules, think I shorted them both :)
+// FIXED!! The module has an on-board regulator so it expected 5V instead of the 3.3V I was supplying... IT WORKS!
 int main() {
 	SPI_Init();
 	USART_Init();
+	for (volatile int i = 0; i < 1000000; i++);
 	printf("READY\r\n");
 
-	// Should return 0 if sequence powers up correctly
-	uint8_t miso_state = SPI_Transfer(0xFF);
-	printf("Initial MISO: 0x%02X\n", miso_state);
+	// Returns 0x00, along with the status codes from each command.
+	printf("Initialization: 0x%02X\r\n", SD_Init());
 
 	while (1) {
-
 	}
-
 }
 
 void SPI_Init() {
@@ -266,8 +264,6 @@ void USART_Init() {
 
 	USART2 -> CR1 |= (1 << 2) | (1 << 3);													// Receiver & Transmitter Enabled
 	USART2 -> CR1 |= (1 << 13);																// USART2 Enabled
-
-	printf("USART configured...........\r\n");
 }
 
 // printf() retargeting
