@@ -1,8 +1,10 @@
 // Used as reference for SD card commands https://chlazza.nfshost.com/sdcardinfo.html
-
 #include "main.h"
 #include <stdio.h>
+#include <string.h>
+#include "ff.h"
 
+// Prototypes
 void SPI_Init();
 void USART_Init();
 uint8_t SPI_Transfer(uint8_t);
@@ -15,19 +17,83 @@ uint8_t SD_SendCMD55();
 uint8_t SD_SendACMD41();
 uint8_t SD_Card_Init();
 uint8_t SD_Init();
+uint8_t SD_TestBlockReadWrite();
 
-// FIXED!! The module has an on-board regulator so it expected 5V instead of the 3.3V I was supplying... IT WORKS!
+uint8_t buffer[512];
+
 int main() {
-	SPI_Init();
-	USART_Init();
-	for (volatile int i = 0; i < 1000000; i++);
-	printf("READY\r\n");
+    FATFS fs;
+    FIL file;
+    FRESULT fr;
+    UINT bw;
 
-	// Returns 0x00, along with the status codes from each command.
-	printf("Initialization: 0x%02X\r\n", SD_Init());
+    SPI_Init();
+    USART_Init();
+    for (volatile int i = 0; i < 10000; i++);
+    printf("Starting...\r\n");
 
-	while (1) {
-	}
+    f_mount(NULL, "", 0);
+
+    fr = f_mount(&fs, "", 1);
+    if (fr != FR_OK) {
+        printf("Mount failed: %d\r\n", fr);
+        while(1);
+    }
+    printf("Mount successful\r\n");
+
+    // Create test directory
+    fr = f_mkdir("LOGDIR");
+    if (fr == FR_OK || fr == FR_EXIST) {
+        printf("Directory created or exists\r\n");
+    }
+
+    char filename[64];
+    sprintf(filename, "LOGDIR/TEST.TXT");
+
+    fr = f_open(&file, filename, FA_WRITE | FA_CREATE_ALWAYS);
+    if (fr != FR_OK) {
+        printf("File creation failed: %d\r\n", fr);
+        f_mount(NULL, "", 0);
+        while(1);
+    }
+
+    const char *text = "Test file\r\n";
+    fr = f_write(&file, text, strlen(text), &bw);
+    if (fr != FR_OK) {
+        printf("Write failed: %d\r\n", fr);
+    }
+
+    f_sync(&file);
+    f_close(&file);
+
+    f_mount(NULL, "", 0);
+
+    printf("All operations complete\r\n");
+    while(1);
+}
+
+void USART_Init() {
+	RCC -> APB1ENR |= (1 << 17);															// USART2 Clock
+	RCC -> AHB1ENR |= (1 << 0);																// GPIOA Clock; should be already enabled
+
+	GPIOA -> MODER &= ~((3 << (2 * 2)) | (3 << (2 * 3)));									// PA2 & PA3 to Alternate Function
+	GPIOA -> MODER |= (2 << (2 * 2)) | (2 << (2 * 3));
+
+	GPIOA -> AFR[0] |= (7 << (4 * 2)) | (7 << (4 * 3));										// Sets alternate function for USART2
+
+	USART2 -> BRR = 0x0683;																	// Baud rate set to 9600
+
+	USART2 -> CR1 |= (1 << 2) | (1 << 3);													// Receiver & Transmitter Enabled
+	USART2 -> CR1 |= (1 << 13);																// USART2 Enabled
+}
+
+int __io_putchar(int c) {
+	while(!(USART2 -> SR & (1 << 7)));
+	USART2 -> DR = c;
+
+	while(!(USART2 -> SR & (1 << 6)));
+	USART2 -> SR &= ~(1 << 6);
+	return c;
 }
 
 void SPI_Init() {
@@ -251,27 +317,140 @@ uint8_t SD_Init() {
 	return 0;
 }
 
-void USART_Init() {
-	RCC -> APB1ENR |= (1 << 17);															// USART2 Clock
-	RCC -> AHB1ENR |= (1 << 0);																// GPIOA Clock; should be already enabled
+// Gets a block to read; Sends CMD17 to the SD card with the MSB -> LSB in bytes
+uint8_t SD_ReadBlock(uint32_t blockAddress, uint8_t* buffer) {
+    uint8_t response;
+    uint16_t timeout;
 
-	GPIOA -> MODER &= ~((3 << (2 * 2)) | (3 << (2 * 3)));									// PA2 & PA3 to Alternate Function
-	GPIOA -> MODER |= (2 << (2 * 2)) | (2 << (2 * 3));
+    SD_Select();
 
-	GPIOA -> AFR[0] |= (7 << (4 * 2)) | (7 << (4 * 3));										// Sets alternate function for USART2
+    SPI_Transfer(0x51);
+    SPI_Transfer((blockAddress >> 24) & 0xFF);
+    SPI_Transfer((blockAddress >> 16) & 0xFF);
+    SPI_Transfer((blockAddress >> 8) & 0xFF);
+    SPI_Transfer(blockAddress & 0xFF);
+    SPI_Transfer(0xFF);
 
-	USART2 -> BRR = 0x0683;																	// Baud rate set to 9600
+    timeout = 100;
+    do {
+        response = SPI_Transfer(0xFF);
+        timeout--;
+    } while (response == 0xFF && timeout > 0);
 
-	USART2 -> CR1 |= (1 << 2) | (1 << 3);													// Receiver & Transmitter Enabled
-	USART2 -> CR1 |= (1 << 13);																// USART2 Enabled
+    if (response != 0x00) {
+        printf("Read cmd response error: %02X\r\n", response);
+        SD_Deselect();
+        return 1;
+    }
+
+    timeout = 5000;
+    do {
+        response = SPI_Transfer(0xFF);
+        timeout--;
+    } while (response == 0xFF && timeout > 0);
+
+    if (response != 0xFE) {
+        printf("No data token: %02X\r\n", response);
+        SD_Deselect();
+        return 2;
+    }
+
+    for(int i = 0; i < 512; i++) {
+        buffer[i] = SPI_Transfer(0xFF);
+    }
+
+    SPI_Transfer(0xFF);
+    SPI_Transfer(0xFF);
+
+    SPI_Transfer(0xFF);
+
+    SD_Deselect();
+
+    return 0;
 }
 
-// printf() retargeting
-int __io_putchar(int c) {
-	while(!(USART2 -> SR & (1 << 7)));
-	USART2 -> DR = c;
+// Gets a block to write to; Sends CMD24 to the SD card with the MSB -> LSB in bytes
+uint8_t SD_WriteBlock(uint32_t blockAddress, const uint8_t* buffer) {
+	uint8_t response;
+	uint16_t retry = 0;
 
-	while(!(USART2 -> SR & (1 << 6)));
-	USART2 -> SR &= ~(1 << 6);
-	return c;
+	SD_Select();
+
+	SPI_Transfer(0x58);
+	SPI_Transfer((blockAddress >> 24) & 0xFF);
+	SPI_Transfer((blockAddress >> 16) & 0xFF);
+	SPI_Transfer((blockAddress >> 8) & 0xFF);
+	SPI_Transfer(blockAddress & 0xFF);
+
+	SPI_Transfer(0xFF);
+
+	do {
+		response = SPI_Transfer(0xFF);
+		retry++;
+	} while (response == 0xFF && retry < 1000);
+
+	if (response != 0x00) {
+		SD_Deselect();
+		return response;
+	}
+
+	SPI_Transfer(0xFE);
+
+	for (uint16_t i = 0; i < 512; i++) {
+	        SPI_Transfer(buffer[i]);
+	}
+
+	SPI_Transfer(0xFF);
+	SPI_Transfer(0xFF);
+
+	response = SPI_Transfer(0xFF);
+	if ((response & 0x1F) != 0x05) {
+		SD_Deselect();
+		return response;
+	}
+
+	retry = 0;
+	do {
+		response = SPI_Transfer(0xFF);
+		retry++;
+	} while (response == 0x00 && retry < 1000);
+
+	SD_Deselect();
+
+	return 0x00;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
